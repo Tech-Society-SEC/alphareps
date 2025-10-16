@@ -84,15 +84,15 @@ pip install -r requirements.txt
 4. **Train the ML model**
 ```bash
 cd backend
-python -c "
-import asyncio
-from models.exercise_classifier import ExerciseClassifier
-async def train():
-    classifier = ExerciseClassifier()
-    await classifier.train_model()
-asyncio.run(train())
-"
+python train_video_model.py
 ```
+
+**Note**: Training requires the dataset videos. The model will:
+- Process 101 videos (3,015 frames)
+- Extract 146 features per frame
+- Train ensemble model (RF + GB + SVM)
+- Achieve 99.50% accuracy
+- Save model to `models/video_exercise_model.pkl`
 
 5. **Start the backend server**
 ```bash
@@ -147,12 +147,12 @@ Navigate to `http://localhost:3000`
 
 ## 🧠 ML Model Details
 
-### Exercise Classification Model
-- **Algorithm**: Random Forest Classifier
-- **Features**: 132 pose landmarks (33 points × 4 coordinates)
-- **Training Data**: 3,501 labeled exercise images
-- **Accuracy**: 90%+ on test set
-- **Classes**: 9 exercise types
+### Video Exercise Classification Model
+- **Algorithm**: Ensemble (Random Forest + Gradient Boosting + SVM)
+- **Features**: 146 enhanced features (132 pose landmarks + 14 curl-specific features)
+- **Training Data**: 3,015 video frames from 101 exercise videos
+- **Accuracy**: 99.50% on test set
+- **Classes**: 5 exercise types (barbell biceps curl, hammer curl, push-up, shoulder press, squat)
 
 ### Pose Analysis Pipeline
 1. **MediaPipe Pose Detection** → Extract 33 body landmarks
@@ -166,27 +166,46 @@ Navigate to `http://localhost:3000`
 ```
 AlphaReps/
 ├── backend/
-│   ├── main.py                 # FastAPI server
+│   ├── main.py                           # FastAPI server
+│   ├── train_video_model.py              # Model training script
+│   ├── test_realtime.py                  # Real-time testing
+│   ├── test_video_model.py               # Model evaluation
 │   ├── models/
-│   │   ├── exercise_classifier.py
-│   │   ├── pose_analyzer.py
-│   │   ├── rep_counter.py
-│   │   └── form_checker.py
+│   │   ├── video_exercise_classifier.py  # Enhanced ML classifier
+│   │   └── video_exercise_model.pkl      # Trained model (excluded from git)
 │   ├── database/
-│   │   └── db_manager.py
+│   │   └── db_manager.py                 # Database operations
 │   └── utils/
-│       └── face_recognition_utils.py
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── context/
-│   │   └── App.js
-│   └── package.json
-├── dataset/
-│   └── imagePoses.csv          # Training data
-└── requirements.txt
+│       └── face_recognition_utils.py     # Face recognition utilities
+├── dataset/                              # Training videos (excluded from git)
+│   ├── barbell-biceps-curl/             # 25 videos
+│   ├── hammer-curl/                     # 12 videos  
+│   ├── push-up/                         # 25 videos
+│   ├── shoulder-press/                  # 20 videos
+│   └── squat/                           # 19 videos
+├── .gitignore                           # Git ignore rules
+├── requirements.txt                     # Python dependencies
+└── README.md                            # Project documentation
 ```
+
+### 📁 File Management
+
+**Included in Git:**
+- ✅ Source code (`backend/*.py`)
+- ✅ Configuration files (`.gitignore`, `requirements.txt`)
+- ✅ Documentation (`README.md`)
+
+**Excluded from Git:**
+- ❌ Trained models (`*.pkl`, `*.joblib`)
+- ❌ Dataset videos (`dataset/*.mp4`)
+- ❌ Cache files (`__pycache__/`)
+- ❌ Virtual environments (`venv/`, `.env`)
+- ❌ IDE settings (`.vscode/`, `.idea/`)
+
+**Model Files:**
+- `video_exercise_model.pkl` - Generated after training
+- Must be trained locally using `python train_video_model.py`
+- Size: ~50MB (too large for Git)
 
 ## 🔧 Configuration
 

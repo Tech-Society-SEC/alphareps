@@ -259,13 +259,6 @@ min_samples_split=5
 
 ## 🚀 Deployment
 
-### Using Docker (Recommended)
-
-1. **Build and run with Docker Compose**
-```bash
-docker-compose up --build
-```
-
 ### Manual Deployment
 
 1. **Backend (FastAPI)**
@@ -309,3 +302,5 @@ For support, email support@alpharep.ai or join our Discord community.
 **Built with ❤️ by the AlphaRep Team**
 
 *Transform your fitness journey with AI-powered personal training!* 💪🤖
+A d d e d   f o r   p r o j e c t   r e v i e w  
+ 

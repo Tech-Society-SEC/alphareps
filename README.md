@@ -91,7 +91,6 @@ python train_video_model.py
 - Process 101 videos (3,015 frames)
 - Extract 146 features per frame
 - Train ensemble model (RF + GB + SVM)
-- Achieve 99.50% accuracy
 - Save model to `models/video_exercise_model.pkl`
 
 5. **Start the backend server**

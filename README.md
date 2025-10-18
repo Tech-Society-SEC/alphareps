@@ -4,6 +4,7 @@ AlphaRep is a cutting-edge web application that serves as your AI-powered person
 
 ## 🌟 Features
 
+
 ### 🤖 AI-Powered Exercise Detection
 - **Real-time pose detection** using MediaPipe
 - **9 exercise types supported**: Push-ups, Pull-ups, Squats, Lunges, Plank, Shoulder Press, Bent Over Row, Chest Dips, Glute Bridge

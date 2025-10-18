@@ -233,22 +233,10 @@ min_samples_split=5
 | Exercise | Rep Counting | Form Analysis | Difficulty |
 |----------|-------------|---------------|------------|
 | Push-ups | ✅ | ✅ | Beginner |
-| Pull-ups | ✅ | ✅ | Advanced |
+| Hammer curls | ✅ | ✅ | Beginner |
+| Bicep curls | ✅ | ✅ | Beginner |
 | Squats | ✅ | ✅ | Beginner |
-| Lunges | ✅ | ✅ | Intermediate |
-| Plank | ⏱️ Timer | ✅ | Beginner |
 | Shoulder Press | ✅ | ✅ | Intermediate |
-| Bent Over Row | ✅ | ✅ | Intermediate |
-| Chest Dips | ✅ | ✅ | Advanced |
-| Glute Bridge | ✅ | ✅ | Beginner |
-
-## 🎯 Performance Metrics
-
-- **Exercise Detection**: 90%+ accuracy
-- **Rep Counting**: 95%+ accuracy
-- **Form Analysis**: Real-time feedback
-- **Latency**: <200ms processing time
-- **Frame Rate**: 5 FPS analysis
 
 ## 🔒 Privacy & Security
 
@@ -256,15 +244,6 @@ min_samples_split=5
 - **Secure Storage**: Face encodings encrypted
 - **No Video Recording**: Only pose landmarks stored
 - **GDPR Compliant**: User data control
-
-## 🚀 Deployment
-
-### Using Docker (Recommended)
-
-1. **Build and run with Docker Compose**
-```bash
-docker-compose up --build
-```
 
 ### Manual Deployment
 
@@ -287,25 +266,3 @@ serve -s build -l 3000
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **MediaPipe** for pose detection
-- **FastAPI** for the backend framework
-- **React.js** for the frontend
-- **scikit-learn** for machine learning
-- **OpenCV** for computer vision
-- **Tailwind CSS** for styling
-
-## 📞 Support
-
-For support, email support@alpharep.ai or join our Discord community.
-
----
-
-**Built with ❤️ by the AlphaRep Team**
-
-*Transform your fitness journey with AI-powered personal training!* 💪🤖

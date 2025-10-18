@@ -2,12 +2,10 @@
 
 AlphaRep is a cutting-edge web application that serves as your AI-powered personal trainer. Using computer vision and machine learning, it provides real-time exercise detection, repetition counting, form correction, and workout analytics through your webcam.
 
-## 🌟 Features
-
 
 ### 🤖 AI-Powered Exercise Detection
 - **Real-time pose detection** using MediaPipe
-- **9 exercise types supported**: Push-ups, Pull-ups, Squats, Lunges, Plank, Shoulder Press, Bent Over Row, Chest Dips, Glute Bridge
+- **5 exercise types supported**: Push-ups, Hammer curls, Bicep Curls, Squats, Shoulder Press
 - **Automatic exercise classification** with 90%+ accuracy
 
 ### 📊 Smart Form Analysis

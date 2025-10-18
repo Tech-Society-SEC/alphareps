@@ -68,19 +68,12 @@ git clone <repository-url>
 cd AlphaReps
 ```
 
-2. **Create virtual environment**
-```bash
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
-```
-
-3. **Install dependencies**
+2. **Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-4. **Train the ML model**
+3. **Train the ML model**
 ```bash
 cd backend
 python train_video_model.py

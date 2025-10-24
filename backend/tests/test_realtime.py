@@ -21,8 +21,11 @@ import os
 from collections import deque, Counter
 import time
 
-# Add the current directory to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the current directory and parent directory to Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(current_dir)
+sys.path.append(parent_dir)
 
 from models.video_exercise_classifier import VideoExerciseClassifier
 
@@ -36,13 +39,30 @@ class RealTimeClassifier:
     def load_model(self):
         """Load the trained model"""
         print("📚 Loading trained model...")
-        success = self.classifier.load_model("models/video_exercise_model.pkl")
+        
+        # Try different possible model paths
+        model_paths = [
+            "models/video_exercise_model.pkl",
+            "../models/video_exercise_model.pkl",
+            os.path.join(parent_dir, "models", "video_exercise_model.pkl")
+        ]
+        
+        success = False
+        for model_path in model_paths:
+            if os.path.exists(model_path):
+                print(f"🔍 Found model at: {model_path}")
+                success = self.classifier.load_model(model_path)
+                break
+            else:
+                print(f"❌ Model not found at: {model_path}")
+        
         if success:
             print("✅ Model loaded successfully!")
             self.model_loaded = True
             print(f"📋 Supported exercises: {', '.join(self.classifier.exercise_classes)}")
         else:
             print("❌ Failed to load model. Please train the model first.")
+            print("💡 Make sure video_exercise_model.pkl exists in the models directory")
         return success
     
     def get_stable_prediction(self):
@@ -71,8 +91,8 @@ class RealTimeClassifier:
         # Create semi-transparent overlay
         overlay = frame.copy()
         
-        # Top bar for prediction
-        cv2.rectangle(overlay, (0, 0), (width, 80), (0, 0, 0), -1)
+        # Top bar for prediction (taller for more info)
+        cv2.rectangle(overlay, (0, 0), (width, 100), (0, 0, 0), -1)
         
         # Bottom bar for instructions
         cv2.rectangle(overlay, (0, height-60), (width, height), (0, 0, 0), -1)
@@ -178,7 +198,7 @@ class RealTimeClassifier:
             # Show frame
             cv2.imshow('AlphaRep - Real-time Exercise Classification', frame)
             
-            # Handle key presses
+            # Handle key presses with minimal wait to prevent buffering
             key = cv2.waitKey(1) & 0xFF
             
             if key == ord('q'):

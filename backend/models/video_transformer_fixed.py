@@ -308,19 +308,7 @@ class FixedVideoTransformer:
                 
                 # Initialize enhanced model
                 self.model = EnhancedVideoClassifier(num_classes=len(self.exercise_classes))
-                
-                # Handle architecture changes (old model had 3 GRU layers, new has 2)
-                try:
-                    self.model.load_state_dict(checkpoint['model_state_dict'])
-                    print("✅ Model loaded with exact architecture match")
-                except RuntimeError as e:
-                    if "gru.weight_ih_l2" in str(e):
-                        print("🔄 Architecture mismatch detected (old 3-layer GRU vs new 2-layer)")
-                        print("💡 Starting fresh training with optimized architecture...")
-                        return self.train_model()
-                    else:
-                        raise e
-                
+                self.model.load_state_dict(checkpoint['model_state_dict'])
                 self.model.to(self.device)
                 self.model.eval()
                 
@@ -458,22 +446,14 @@ class FixedVideoTransformer:
                 if class_name in self.exercise_classes:
                     class_idx = self.exercise_classes.index(class_name)
                     
-                    # Get ALL video files (including all formats and case variations)
-                    video_extensions = ['*.mp4', '*.avi', '*.mov', '*.mkv', '*.wmv', 
-                                      '*.MP4', '*.AVI', '*.MOV', '*.MKV', '*.WMV']
+                    # Get ALL video files (including .mp4, .avi, .mov, etc.)
+                    video_extensions = ['*.mp4', '*.avi', '*.mov', '*.mkv', '*.wmv']
                     class_videos = []
                     
                     for ext in video_extensions:
-                        found_videos = list(class_dir.glob(ext))
-                        class_videos.extend(found_videos)
-                        if found_videos:
-                            print(f"      Found {len(found_videos)} {ext} files")
+                        class_videos.extend(list(class_dir.glob(ext)))
                     
-                    print(f"   📊 {class_name}: Found {len(class_videos)} total videos")
-                    
-                    # Show detailed breakdown if many videos
-                    if len(class_videos) > 20:
-                        print(f"      ✅ Large dataset detected - using all {len(class_videos)} videos for maximum accuracy!")
+                    print(f"   📊 {class_name}: Found {len(class_videos)} videos")
                     
                     # Add ALL videos for this class
                     for video_file in class_videos:
@@ -484,26 +464,7 @@ class FixedVideoTransformer:
             print("❌ No video files found")
             return False
         
-        print(f"📊 TOTAL DATASET: {len(video_paths)} videos across {len(set(labels))} classes")
-        print(f"   ✅ All video formats captured: .mp4, .avi, .mov, .mkv, .wmv (case-insensitive)")
-        
-        # Show per-class breakdown
-        from collections import Counter
-        class_counts = Counter(labels)
-        print(f"\n📈 Dataset Distribution (using ALL videos):")
-        total_videos = 0
-        for class_idx, count in sorted(class_counts.items()):
-            class_name = self.exercise_classes[class_idx]
-            print(f"   {class_name}: {count} videos")
-            total_videos += count
-        print(f"   TOTAL: {total_videos} videos")
-        
-        # Verify we have videos for all classes
-        unique_classes = len(set(labels))
-        if unique_classes != len(self.exercise_classes):
-            print(f"⚠️  Warning: Only found videos for {unique_classes}/{len(self.exercise_classes)} classes")
-        else:
-            print(f"✅ Perfect! Found videos for all {unique_classes} exercise classes")
+        print(f"📊 Found {len(video_paths)} videos across {len(set(labels))} classes")
         
         # Setup label encoder
         self.label_encoder = LabelEncoder()
@@ -869,5 +830,3 @@ def run_realtime_classification():
 
 if __name__ == "__main__":
     run_realtime_classification()
-
-

@@ -70,13 +70,6 @@ Built for **gyms**, **trainers**, and **fitness enthusiasts** who want AI-powere
 - **Dark theme** optimized for gyms
 - **Real-time UI updates** with WebSockets ready
 
-### 👨‍💼 Admin Dashboard (Gym Owners)
-- **Member management** table with search/filter
-- **Gym statistics** overview
-- **Top performers** leaderboard
-- **Member analytics** and insights
-- **Quick actions** for common tasks
-
 ### 💪 User Dashboard
 - **Personal workout stats**
 - **Recent workout history**

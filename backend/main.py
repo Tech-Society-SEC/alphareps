@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import our models
-from models.video_exercise_classifier import VideoExerciseClassifier
+from scripts.models.video_exercise_classifier import VideoExerciseClassifier
 from rep_counters.pushup_counter import PushupCounter
 from rep_counters.squat_counter import SquatCounter
 from rep_counters.curl_counter import CurlCounter
@@ -91,7 +91,7 @@ async def startup_event():
     print("="*60)
     
     # Load exercise classifier
-    model_path = "models/video_exercise_model.pkl"
+    model_path = "scripts/models/video_exercise_model.pkl"
     if os.path.exists(model_path):
         print("[*] Loading exercise classifier...")
         classifier = VideoExerciseClassifier()

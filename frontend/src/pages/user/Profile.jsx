@@ -1,136 +1,84 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Camera, Save, Mail, Phone, Calendar } from 'lucide-react'
+import { ArrowLeft, User, Mail, Calendar } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const Profile = () => {
-  const { user, updateUser } = useAuthStore()
-  const [isEditing, setIsEditing] = useState(false)
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: user?.phone || '',
-    joinDate: user?.joinDate || 'Jan 2025'
-  })
-
-  const handleSave = () => {
-    updateUser(formData)
-    setIsEditing(false)
-  }
+  const { user } = useAuthStore()
 
   return (
-    <div className="min-h-screen bg-dark-900 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <Link to="/user/dashboard" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back to Dashboard</span>
-          </Link>
+    <div className="min-h-screen bg-dark-900">
+      {/* Header */}
+      <div className="bg-dark-800/50 backdrop-blur-sm border-b border-dark-700">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <Link to="/user/dashboard" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back</span>
+            </Link>
+            <h1 className="text-xl font-bold text-white">Profile</h1>
+            <div className="w-16"></div>
+          </div>
         </div>
+      </div>
 
-        {/* Profile Card */}
-        <div className="card">
-          <div className="flex flex-col md:flex-row gap-8">
-            {/* Avatar Section */}
-            <div className="flex flex-col items-center">
-              <div className="relative">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center text-4xl font-black text-white">
-                  {user?.name?.charAt(0) || 'U'}
-                </div>
-                <button className="absolute bottom-0 right-0 w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center hover:bg-primary-600 transition-colors">
-                  <Camera className="w-5 h-5 text-white" />
-                </button>
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          {/* Profile Card */}
+          <div className="bg-dark-800 rounded-2xl p-8 border border-dark-700">
+            <div className="flex items-center gap-6">
+              <div className="w-20 h-20 bg-gradient-to-br from-primary-500 to-accent-500 rounded-2xl flex items-center justify-center">
+                <User className="w-10 h-10 text-white" />
               </div>
-              <h2 className="text-2xl font-bold mt-4">{user?.name}</h2>
-              <p className="text-gray-400">{user?.role === 'admin' ? 'Admin' : 'Member'}</p>
-            </div>
-
-            {/* Info Section */}
-            <div className="flex-1">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold">Personal Information</h3>
-                <button
-                  onClick={() => setIsEditing(!isEditing)}
-                  className="btn-outline py-2 px-4"
-                >
-                  {isEditing ? 'Cancel' : 'Edit Profile'}
-                </button>
+              <div>
+                <h2 className="text-2xl font-black text-white">{user?.name || 'User'}</h2>
+                <p className="text-gray-400 capitalize">{user?.role || 'Member'}</p>
               </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
-                    <Mail className="w-4 h-4 inline mr-2" />
-                    Email
-                  </label>
-                  {isEditing ? (
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="input-field w-full"
-                    />
-                  ) : (
-                    <p className="text-lg">{user?.email || 'Not set'}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
-                    <Phone className="w-4 h-4 inline mr-2" />
-                    Phone
-                  </label>
-                  {isEditing ? (
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="input-field w-full"
-                    />
-                  ) : (
-                    <p className="text-lg">{formData.phone || 'Not set'}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
-                    <Calendar className="w-4 h-4 inline mr-2" />
-                    Member Since
-                  </label>
-                  <p className="text-lg">{formData.joinDate}</p>
-                </div>
-              </div>
-
-              {isEditing && (
-                <button
-                  onClick={handleSave}
-                  className="btn-primary mt-6 w-full flex items-center justify-center gap-2"
-                >
-                  <Save className="w-5 h-5" />
-                  Save Changes
-                </button>
-              )}
             </div>
           </div>
-        </div>
 
-        {/* Stats */}
-        <div className="grid md:grid-cols-3 gap-6 mt-6">
-          <div className="card text-center">
-            <p className="text-4xl font-black text-primary-500 mb-2">24</p>
-            <p className="text-gray-400">Total Workouts</p>
+          {/* Details */}
+          <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 space-y-4">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Account Details</h3>
+
+            <div className="flex items-center gap-4 p-4 bg-dark-700/50 rounded-lg">
+              <Mail className="w-5 h-5 text-primary-400" />
+              <div>
+                <p className="text-xs text-gray-500">Email</p>
+                <p className="text-white">{user?.email || 'user@alphareps.com'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 p-4 bg-dark-700/50 rounded-lg">
+              <Calendar className="w-5 h-5 text-accent-400" />
+              <div>
+                <p className="text-xs text-gray-500">Member Since</p>
+                <p className="text-white">{user?.joinDate || 'Dec 2024'}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 p-4 bg-dark-700/50 rounded-lg">
+              <img src="/assets/logo.svg" alt="" className="w-5 h-5" />
+              <div>
+                <p className="text-xs text-gray-500">Account Type</p>
+                <p className="text-white capitalize">{user?.role || 'User'}</p>
+              </div>
+            </div>
           </div>
-          <div className="card text-center">
-            <p className="text-4xl font-black text-accent-500 mb-2">1,240</p>
-            <p className="text-gray-400">Total Reps</p>
+
+          {/* Actions */}
+          <div className="flex gap-4">
+            <Link to="/user/workout" className="flex-1">
+              <button className="w-full bg-accent-500 hover:bg-accent-600 text-white font-bold py-4 rounded-xl transition-colors">
+                Start Workout
+              </button>
+            </Link>
           </div>
-          <div className="card text-center">
-            <p className="text-4xl font-black text-warning-500 mb-2">94%</p>
-            <p className="text-gray-400">Avg Accuracy</p>
-          </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   )

@@ -18,8 +18,8 @@ def main():
     model_paths = [
         'models/video_exercise_model.pkl',          # Primary location
         'backend/models/video_exercise_model.pkl',  # Full backend path
-        'scripts/models/video_exercise_model.pkl',  # Legacy training script location
-        'backend/scripts/models/video_exercise_model.pkl'  # Legacy full backend path
+        'scripts/models/bilstm_exercise_model.pkl', # BiLSTM model
+        'backend/scripts/models/bilstm_exercise_model.pkl' # BiLSTM full path
     ]
     
     model_found = False
@@ -39,24 +39,11 @@ def main():
         return
     
     print()
-    print("Select workout mode:")
-    print("  1. Unified System (Recommended)")
-    print("  2. Integrated Trainer")
     print()
-    
-    choice = input("Enter choice (1 or 2): ").strip()
-    
-    if choice == '1':
-        print("\nStarting Unified Workout System...")
-        from unified_workout_system import UnifiedWorkoutSystem
-        system = UnifiedWorkoutSystem()
-        system.run_webcam()
-    elif choice == '2':
-        print("\nStarting Integrated Trainer...")
-        from integrated_trainer import main as integrated_main
-        integrated_main()
-    else:
-        print("Invalid choice!")
+    print("Starting Unified Workout System...")
+    from unified_workout_system import UnifiedWorkoutSystem
+    system = UnifiedWorkoutSystem()
+    system.run_webcam()
 
 
 if __name__ == "__main__":

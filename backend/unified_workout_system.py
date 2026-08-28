@@ -4,7 +4,9 @@ Unified Workout System - Integrates video_exercise_classifier with rep counters
 import cv2
 import numpy as np
 import mediapipe as mp
-from models.video_exercise_classifier import VideoExerciseClassifier
+import os
+import pickle
+import tensorflow as tf
 from rep_counters.pushup_counter import PushupCounter
 from rep_counters.squat_counter import SquatCounter
 from rep_counters.curl_counter import CurlCounter
@@ -21,21 +23,20 @@ class UnifiedWorkoutSystem:
     def __init__(self, model_path=None):
         print("Initializing Unified Workout System...")
         
-        # Initialize exercise classifier with auto-loading
-        self.classifier = VideoExerciseClassifier(auto_load_model=True)
-        
-        # If auto-loading failed and specific path provided, try that
-        if not self.classifier.model_loaded and model_path:
-            if not self.classifier.load_model(model_path):
-                print("Model not found. Please train the model first.")
-                print("   Run: python backend/scripts/train_video_model.py")
-                raise FileNotFoundError(f"Model not found at {model_path}")
-        
-        # Check if model is loaded
-        if not self.classifier.model_loaded:
-            print("No trained model available. Please train the model first.")
-            print("   Run: python backend/scripts/train_video_model.py")
-            raise FileNotFoundError("No trained model found")
+        # Load BiLSTM exercise classifier
+        meta_path = os.path.join("scripts", "models", "bilstm_exercise_model.pkl")
+        keras_path = os.path.join("scripts", "models", "bilstm_exercise_model.keras")
+        if not (os.path.exists(meta_path) and os.path.exists(keras_path)):
+            print("No trained BiLSTM model available. Please train the model first.")
+            print("   Run: python backend/scripts/models/bilstm_training.py")
+            raise FileNotFoundError("No trained BiLSTM model found")
+
+        with open(meta_path, "rb") as f:
+            meta = pickle.load(f)
+        self.label_encoder = meta["label_encoder"]
+        self.scaler = meta["scaler"]
+        self.sequence_length = meta["sequence_length"]
+        self.lstm_model = tf.keras.models.load_model(keras_path)
         
         # Initialize MediaPipe
         self.mp_pose = mp.solutions.pose
@@ -64,9 +65,22 @@ class UnifiedWorkoutSystem:
         self.confidence_threshold = 0.7
         self.stable_frames = 0
         self.required_stable_frames = 5  # Need 5 consistent frames to change exercise
+        self.min_reps_before_switch = 10
+        self.sequence_buffer = []
         
         print("Unified Workout System Ready!")
         print(f"Supported Exercises: {list(self.counters.keys())}")
+    
+    def reset_session(self):
+        """Reset current workout session state and all rep counters"""
+        self.current_exercise = None
+        self.current_counter = None
+        self.exercise_history = []
+        self.stable_frames = 0
+        
+        # Reset all individual exercise counters
+        for counter in self.counters.values():
+            counter.reset()
     
     def process_frame(self, frame):
         """
@@ -92,27 +106,42 @@ class UnifiedWorkoutSystem:
                 'feedback': 'Position yourself in frame'
             }
         
-        # Extract landmarks for classification
-        landmarks = self.classifier.extract_landmarks_from_frame(frame)
-        
-        if landmarks is None:
-            return {
-                'success': False,
-                'message': 'Could not extract landmarks',
-                'exercise': self.current_exercise or 'NONE',
-                'reps': 0,
-                'stage': 'ready',
-                'feedback': 'Adjust your position'
-            }
-        
-        # Classify exercise
-        detected_exercise = self.classifier.predict(landmarks)
+        # Extract simple keypoints (x,y,z only) for LSTM
+        keypoints = []
+        for lm in results.pose_landmarks.landmark:
+            keypoints.extend([lm.x, lm.y, lm.z])
+        features = np.array(keypoints, dtype=np.float32)
+
+        # Maintain sequence buffer
+        self.sequence_buffer.append(features)
+        if len(self.sequence_buffer) > self.sequence_length:
+            self.sequence_buffer.pop(0)
+
+        if len(self.sequence_buffer) < self.sequence_length:
+            detected_exercise = self.current_exercise or 'push_up'
+        else:
+            seq = np.array(self.sequence_buffer[-self.sequence_length:], dtype=np.float32)
+            seq_reshaped = seq.reshape(-1, seq.shape[-1])
+            seq_scaled = self.scaler.transform(seq_reshaped)
+            seq_scaled = seq_scaled.reshape(1, self.sequence_length, -1)
+            probs = self.lstm_model.predict(seq_scaled, verbose=0)[0]
+            class_idx = int(np.argmax(probs))
+            detected_exercise = self.label_encoder.inverse_transform([class_idx])[0]
         
         # Smooth exercise transitions (require multiple consistent frames)
+        # and lock current exercise until minimum reps are completed
         if detected_exercise != self.current_exercise:
-            self.stable_frames += 1
-            if self.stable_frames >= self.required_stable_frames:
-                self._switch_exercise(detected_exercise)
+            # Determine how many reps have been completed for the current exercise
+            current_reps = self.current_counter.get_count() if self.current_counter else 0
+
+            # Allow switching only if no exercise is set yet or minimum reps reached
+            if self.current_exercise is None or current_reps >= self.min_reps_before_switch:
+                self.stable_frames += 1
+                if self.stable_frames >= self.required_stable_frames:
+                    self._switch_exercise(detected_exercise)
+                    self.stable_frames = 0
+            else:
+                # Not enough reps yet; keep current exercise locked
                 self.stable_frames = 0
         else:
             self.stable_frames = 0
@@ -165,7 +194,13 @@ class UnifiedWorkoutSystem:
             }
         
         # Different counters return different formats
+        prev_count = self.current_counter.get_count()
         result = self.current_counter.count_rep(landmarks)
+        new_count = self.current_counter.get_count()
+
+        # Debug: print when a rep is actually counted
+        if new_count != prev_count:
+            print(f"Rep detected: {self.current_exercise} -> {new_count}")
         
         # Standardize output format
         if isinstance(result, tuple):

@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Webcam from 'react-webcam'
 import axios from 'axios'
-import { 
-  Play, Pause, Square, TrendingUp, AlertTriangle,
-  CheckCircle, Activity, Zap, ArrowLeft 
+import {
+  Play, Pause, RotateCcw, ArrowLeft, CheckCircle, AlertTriangle,
+  Timer, Flame
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -14,84 +14,87 @@ const WorkoutSession = () => {
   const [exercise, setExercise] = useState('DETECTING...')
   const [reps, setReps] = useState(0)
   const [stage, setStage] = useState('ready')
-  const [feedback, setFeedback] = useState('Start exercising')
-  const [confidence, setConfidence] = useState(0)
+  const [feedback, setFeedback] = useState('Position yourself in frame')
   const [formQuality, setFormQuality] = useState('GOOD')
   const [sessionStats, setSessionStats] = useState({
     totalReps: 0,
     goodFormReps: 0,
-    duration: 0
   })
-  const [angles, setAngles] = useState({ elbow: 0, back: 0 })
+  const [elapsedTime, setElapsedTime] = useState(0)
 
   const intervalRef = useRef(null)
+  const timerRef = useRef(null)
   const isProcessingRef = useRef(false)
+  const lastRepCountRef = useRef(0)
 
   useEffect(() => {
     if (isActive) {
       startWorkout()
+      // Start timer
+      timerRef.current = setInterval(() => {
+        setElapsedTime(prev => prev + 1)
+      }, 1000)
     } else {
       stopWorkout()
+      if (timerRef.current) clearInterval(timerRef.current)
     }
-    
-    return () => stopWorkout()
+
+    return () => {
+      stopWorkout()
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
   }, [isActive])
 
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
   const startWorkout = () => {
-    // Send video frames to backend every 150ms for better responsiveness
     intervalRef.current = setInterval(async () => {
-      // Skip if previous request is still processing
       if (isProcessingRef.current) return
-      
       if (webcamRef.current) {
         const imageSrc = webcamRef.current.getScreenshot()
-        if (imageSrc) {
-          await sendFrame(imageSrc)
-        }
+        if (imageSrc) await sendFrame(imageSrc)
       }
-    }, 150)
+    }, 100)  // Faster frame rate for more responsive counting
   }
 
   const stopWorkout = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-    }
+    if (intervalRef.current) clearInterval(intervalRef.current)
   }
 
   const sendFrame = async (imageData) => {
-    // Prevent overlapping requests
     if (isProcessingRef.current) return
-    
     isProcessingRef.current = true
-    
+
     try {
       const response = await axios.post('/api/workout/analyze', {
         frame: imageData
-      }, {
-        timeout: 3000 // 3 second timeout for faster response
-      })
+      }, { timeout: 3000 })
 
       const data = response.data
-      
-      // Update state with backend response
-      if (data.exercise) {
-        setExercise(data.exercise.toUpperCase())
-        setConfidence(data.confidence || 0)
-      }
-      
+      if (data.exercise) setExercise(data.exercise.toUpperCase())
       if (data.reps !== undefined) setReps(data.reps)
       if (data.stage) setStage(data.stage)
       if (data.feedback) setFeedback(data.feedback)
       if (data.formQuality) setFormQuality(data.formQuality)
-      if (data.angles) setAngles(data.angles)
-      
-      // Update session stats
-      setSessionStats(prev => ({
-        ...prev,
-        totalReps: data.reps || prev.totalReps,
-        goodFormReps: data.formQuality === 'GOOD' ? data.reps : prev.goodFormReps
-      }))
 
+      if (typeof data.reps === 'number') {
+        const currentReps = data.reps
+        const prevReps = lastRepCountRef.current
+        const delta = Math.max(0, currentReps - prevReps)
+        lastRepCountRef.current = currentReps
+
+        if (delta > 0) {
+          setSessionStats(prev => ({
+            ...prev,
+            totalReps: prev.totalReps + delta,
+            goodFormReps: data.formQuality === 'GOOD' ? prev.goodFormReps + delta : prev.goodFormReps
+          }))
+        }
+      }
     } catch (error) {
       console.error('Error analyzing frame:', error)
     } finally {
@@ -99,225 +102,246 @@ const WorkoutSession = () => {
     }
   }
 
-  const getFeedbackColor = () => {
-    if (feedback.includes('GOOD')) return 'from-accent-500 to-accent-600'
-    if (feedback.includes('TUCK') || feedback.includes('STRAIGHTEN')) return 'from-primary-500 to-primary-600'
-    if (feedback.includes('COUNTED')) return 'from-warning-500 to-warning-600'
-    return 'from-gray-600 to-gray-700'
+  const resetSession = async () => {
+    setIsActive(false)
+    setReps(0)
+    setElapsedTime(0)
+    setSessionStats({ totalReps: 0, goodFormReps: 0 })
+    setExercise('DETECTING...')
+    setFeedback('Position yourself in frame')
+    lastRepCountRef.current = 0
+    try {
+      await axios.post('/api/workout/reset')
+    } catch (err) {
+      console.error('Error resetting:', err)
+    }
   }
 
-  const getFormIcon = () => {
-    if (formQuality === 'GOOD') return <CheckCircle className="w-6 h-6 text-accent-400" />
-    return <AlertTriangle className="w-6 h-6 text-primary-400" />
-  }
+  const isGoodForm = formQuality === 'GOOD'
+  const isPerfectForm = feedback.includes('PERFECT')
 
   return (
-    <div className="min-h-screen bg-dark-900 p-4">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-6">
-        <div className="flex items-center justify-between">
-          <Link to="/user/dashboard" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back to Dashboard</span>
-          </Link>
-          
-          <h1 className="text-3xl font-display font-bold">
-            <span className="gradient-text">WORKOUT</span> SESSION
-          </h1>
-          
-          <div className="w-32"></div>
+    <div className="min-h-screen bg-dark-900">
+      {/* Minimal Header */}
+      <div className="bg-dark-800/50 backdrop-blur-sm border-b border-dark-700 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <Link to="/user/dashboard" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+              <ArrowLeft className="w-5 h-5" />
+              <span className="hidden sm:inline">Exit</span>
+            </Link>
+
+            <div className="flex items-center gap-2">
+              <img src="/assets/logo.svg" alt="AlphaReps" className="w-6 h-6 rounded" />
+              <span className="font-bold text-white">ALPHAREPS</span>
+            </div>
+
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2 text-gray-400">
+                <Timer className="w-4 h-4" />
+                <span className="font-mono font-bold text-white">{formatTime(elapsedTime)}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto grid lg:grid-cols-3 gap-6">
-        {/* Main Video Feed */}
-        <div className="lg:col-span-2">
-          <div className="card p-0 overflow-hidden">
-            {/* Video Container */}
-            <div className="relative aspect-video bg-dark-900">
-              <Webcam
-                ref={webcamRef}
-                audio={false}
-                screenshotFormat="image/jpeg"
-                className="w-full h-full object-cover"
-                videoConstraints={{
-                  facingMode: 'user',
-                  width: 1280,
-                  height: 720,
-                }}
-              />
-              
-              {/* Overlay UI */}
-              <div className="absolute inset-0 pointer-events-none">
-                {/* Top Stats Bar */}
-                <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-dark-900/90 to-transparent p-6">
-                  <div className="grid grid-cols-3 gap-4">
-                    {/* Exercise Detection */}
-                    <div className="bg-dark-800/80 backdrop-blur-sm rounded-lg p-4 border-2 border-primary-500/30">
-                      <p className="text-xs text-gray-400 mb-1">EXERCISE</p>
-                      <p className="text-2xl font-black gradient-text">{exercise}</p>
-                      {confidence > 0 && (
-                        <p className="text-xs text-accent-400 mt-1">{Math.round(confidence)}% confident</p>
-                      )}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid lg:grid-cols-4 gap-6">
+
+          {/* Main Video Area - Takes up more space */}
+          <div className="lg:col-span-3">
+            <div className="relative rounded-2xl overflow-hidden bg-dark-800 border border-dark-700">
+              {/* Video Feed */}
+              <div className="relative aspect-video">
+                <Webcam
+                  ref={webcamRef}
+                  audio={false}
+                  screenshotFormat="image/jpeg"
+                  className="w-full h-full object-cover"
+                  videoConstraints={{
+                    facingMode: 'user',
+                    width: 1280,
+                    height: 720,
+                  }}
+                />
+
+                {/* Minimal Overlay - Only Essential Info */}
+                <div className="absolute inset-0 pointer-events-none">
+
+                  {/* Live Indicator */}
+                  {isActive && (
+                    <div className="absolute top-4 left-4 flex items-center gap-2 bg-red-500/90 backdrop-blur-sm px-3 py-1.5 rounded-full">
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                      <span className="text-xs font-bold text-white">LIVE</span>
                     </div>
-                    
-                    {/* Rep Counter */}
-                    <div className="bg-dark-800/80 backdrop-blur-sm rounded-lg p-4 border-2 border-accent-500/30">
-                      <p className="text-xs text-gray-400 mb-1">REPS</p>
-                      <p className="text-4xl font-black text-accent-400">{reps}</p>
-                    </div>
-                    
-                    {/* Stage */}
-                    <div className="bg-dark-800/80 backdrop-blur-sm rounded-lg p-4 border-2 border-warning-500/30">
-                      <p className="text-xs text-gray-400 mb-1">STAGE</p>
-                      <p className="text-2xl font-black text-warning-400">{stage.toUpperCase()}</p>
+                  )}
+
+                  {/* Exercise Badge - Top Right */}
+                  <div className="absolute top-4 right-4">
+                    <div className="bg-dark-900/80 backdrop-blur-sm rounded-lg px-4 py-2 border border-primary-500/30">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Exercise</p>
+                      <p className="text-lg font-black text-white">{exercise}</p>
                     </div>
                   </div>
-                </div>
 
-                {/* Bottom Feedback Bar */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-dark-900/90 to-transparent p-6">
-                  <AnimatePresence mode="wait">
+                  {/* Large Rep Counter - Center Bottom */}
+                  <div className="absolute bottom-20 left-1/2 -translate-x-1/2">
                     <motion.div
-                      key={feedback}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      className={`bg-gradient-to-r ${getFeedbackColor()} rounded-xl p-6 shadow-2xl`}
+                      key={reps}
+                      initial={{ scale: 1.3 }}
+                      animate={{ scale: 1 }}
+                      className="bg-dark-900/90 backdrop-blur-sm rounded-2xl px-10 py-4 border-2 border-accent-500/50"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          {getFormIcon()}
-                          <p className="text-2xl font-bold text-white">{feedback}</p>
-                        </div>
-                        
-                        {exercise === 'PUSH-UP' && (
-                          <div className="flex gap-6 text-sm">
-                            <div>
-                              <span className="text-gray-300">Elbow:</span>
-                              <span className="ml-2 font-bold text-white">{Math.round(angles.elbow)}°</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-300">Back:</span>
-                              <span className="ml-2 font-bold text-white">{Math.round(angles.back)}°</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <p className="text-6xl font-black text-accent-400 text-center">{reps}</p>
+                      <p className="text-xs text-gray-400 text-center uppercase tracking-widest mt-1">REPS</p>
                     </motion.div>
-                  </AnimatePresence>
+                  </div>
+
+                  {/* Form Feedback Bar - Bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 p-4">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={feedback}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className={`flex items-center justify-center gap-3 rounded-xl py-3 px-6 backdrop-blur-sm ${isPerfectForm
+                          ? 'bg-accent-500/90'
+                          : isGoodForm
+                            ? 'bg-accent-500/20 border border-accent-500/50'
+                            : 'bg-primary-500/90'
+                          }`}
+                      >
+                        {isGoodForm ? (
+                          <CheckCircle className="w-5 h-5 text-white" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-white" />
+                        )}
+                        <span className="font-bold text-white text-lg">{feedback}</span>
+                      </motion.div>
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+
+              {/* Control Bar */}
+              <div className="p-4 bg-dark-800 border-t border-dark-700">
+                <div className="flex items-center justify-center gap-4">
+                  {!isActive ? (
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setIsActive(true)}
+                      className="bg-accent-500 hover:bg-accent-600 text-white font-bold py-4 px-12 rounded-xl flex items-center gap-3 transition-colors"
+                    >
+                      <Play className="w-6 h-6" />
+                      <span className="text-lg">Start Training</span>
+                    </motion.button>
+                  ) : (
+                    <>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={() => setIsActive(false)}
+                        className="bg-dark-700 hover:bg-dark-600 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-colors border border-dark-600"
+                      >
+                        <Pause className="w-5 h-5" />
+                        Pause
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        onClick={resetSession}
+                        className="bg-primary-500/20 hover:bg-primary-500/30 text-primary-400 font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-colors border border-primary-500/50"
+                      >
+                        <RotateCcw className="w-5 h-5" />
+                        Reset
+                      </motion.button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar - Compact Stats */}
+          <div className="space-y-4">
+            {/* Session Summary */}
+            <div className="bg-dark-800 rounded-xl p-5 border border-dark-700">
+              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Session</h3>
+
+              <div className="space-y-4">
+                {/* Total Reps */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Total Reps</span>
+                  <span className="text-2xl font-black text-white">{sessionStats.totalReps}</span>
                 </div>
 
-                {/* Recording Indicator */}
-                {isActive && (
-                  <div className="absolute top-6 right-6 flex items-center gap-2 bg-primary-500 px-4 py-2 rounded-full">
-                    <div className="w-3 h-3 bg-white rounded-full animate-pulse"></div>
-                    <span className="text-sm font-bold text-white">LIVE</span>
-                  </div>
-                )}
+                {/* Good Form */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Good Form</span>
+                  <span className="text-2xl font-black text-accent-400">{sessionStats.goodFormReps}</span>
+                </div>
+
+                {/* Duration */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Duration</span>
+                  <span className="text-xl font-bold text-white">{formatTime(elapsedTime)}</span>
+                </div>
               </div>
             </div>
 
-            {/* Controls */}
-            <div className="p-6 bg-dark-800 border-t border-dark-700">
-              <div className="flex items-center justify-center gap-4">
-                {!isActive ? (
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsActive(true)}
-                    className="btn-primary px-12 py-4 flex items-center gap-3"
-                  >
-                    <Play className="w-6 h-6" />
-                    <span className="text-lg font-bold">Start Workout</span>
-                  </motion.button>
-                ) : (
-                  <>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setIsActive(false)}
-                      className="btn-secondary px-8 py-3 flex items-center gap-2"
-                    >
-                      <Pause className="w-5 h-5" />
-                      Pause
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => {
-                        setIsActive(false)
-                        setReps(0)
-                        setSessionStats({ totalReps: 0, goodFormReps: 0, duration: 0 })
-                      }}
-                      className="btn-outline px-8 py-3 flex items-center gap-2"
-                    >
-                      <Square className="w-5 h-5" />
-                      End Session
-                    </motion.button>
-                  </>
-                )}
+            {/* Current State */}
+            <div className="bg-dark-800 rounded-xl p-5 border border-dark-700">
+              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Status</h3>
+
+              {/* Form Quality Indicator */}
+              <div className={`rounded-lg p-4 text-center ${isGoodForm
+                ? 'bg-accent-500/20 border border-accent-500/30'
+                : 'bg-primary-500/20 border border-primary-500/30'
+                }`}>
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  {isGoodForm ? (
+                    <CheckCircle className="w-6 h-6 text-accent-400" />
+                  ) : (
+                    <AlertTriangle className="w-6 h-6 text-primary-400" />
+                  )}
+                  <span className={`text-xl font-black ${isGoodForm ? 'text-accent-400' : 'text-primary-400'}`}>
+                    {formQuality}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider">Form Quality</p>
+              </div>
+
+              {/* Stage */}
+              <div className="mt-4 bg-dark-700/50 rounded-lg p-3 text-center">
+                <p className="text-lg font-bold text-warning-400 uppercase">{stage}</p>
+                <p className="text-xs text-gray-500">Current Stage</p>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Sidebar Stats */}
-        <div className="space-y-6">
-          {/* Form Quality */}
-          <div className="card">
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-primary-500" />
-              Form Quality
-            </h3>
-            <div className={`text-center p-6 rounded-lg ${formQuality === 'GOOD' ? 'bg-accent-500/20 border-2 border-accent-500/50' : 'bg-primary-500/20 border-2 border-primary-500/50'}`}>
-              <div className="text-5xl font-black mb-2">
-                {formQuality === 'GOOD' ? '✓' : '✗'}
+            {/* Tips */}
+            <div className="bg-gradient-to-br from-primary-500/10 to-accent-500/10 rounded-xl p-5 border border-primary-500/20">
+              <div className="flex items-center gap-2 mb-3">
+                <Flame className="w-4 h-4 text-warning-400" />
+                <h3 className="text-sm font-bold text-white">Pro Tips</h3>
               </div>
-              <div className={`text-2xl font-bold ${formQuality === 'GOOD' ? 'text-accent-400' : 'text-primary-400'}`}>
-                {formQuality}
-              </div>
+              <ul className="space-y-2 text-xs text-gray-300">
+                <li className="flex items-start gap-2">
+                  <span className="text-accent-400">•</span>
+                  Full body visible in frame
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-accent-400">•</span>
+                  Good lighting helps detection
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-accent-400">•</span>
+                  Follow form feedback
+                </li>
+              </ul>
             </div>
-          </div>
-
-          {/* Session Stats */}
-          <div className="card">
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-accent-500" />
-              Session Stats
-            </h3>
-            <div className="space-y-4">
-              <div className="stat-box">
-                <p className="text-sm text-gray-400 mb-1">Total Reps</p>
-                <p className="text-3xl font-black text-white">{sessionStats.totalReps}</p>
-              </div>
-              <div className="stat-box">
-                <p className="text-sm text-gray-400 mb-1">Good Form Reps</p>
-                <p className="text-3xl font-black text-accent-400">{sessionStats.goodFormReps}</p>
-              </div>
-              <div className="stat-box">
-                <p className="text-sm text-gray-400 mb-1">Form Accuracy</p>
-                <p className="text-3xl font-black text-warning-400">
-                  {sessionStats.totalReps > 0 
-                    ? Math.round((sessionStats.goodFormReps / sessionStats.totalReps) * 100)
-                    : 0}%
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Tips */}
-          <div className="card bg-gradient-to-br from-primary-500/10 to-accent-500/10 border border-primary-500/20">
-            <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-warning-500" />
-              Quick Tips
-            </h3>
-            <ul className="space-y-2 text-sm text-gray-300">
-              <li>• Keep your body in frame</li>
-              <li>• Maintain good lighting</li>
-              <li>• Follow form feedback</li>
-              <li>• Focus on quality over quantity</li>
-            </ul>
           </div>
         </div>
       </div>

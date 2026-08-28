@@ -2,6 +2,7 @@
 numpy>=1.26.0
 pandas>=2.2.0
 scikit-learn>=1.3.2
+scipy>=1.11.0  # For signal processing (Savitzky-Golay filter)
 
 # Advanced ML for 95%+ Accuracy (GPU-accelerated if CUDA available)
 xgboost>=2.0.0  # Includes GPU support - requires CUDA for GPU acceleration
@@ -32,6 +33,8 @@ python-dotenv>=1.0.0
 
 # Image Processing
 Pillow>=10.1.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
 
 # Deep Learning - LSTM Model (RTX 3060 Optimized)
 tensorflow>=2.15.0,<2.18.0  # GPU support with CUDA 11.8+

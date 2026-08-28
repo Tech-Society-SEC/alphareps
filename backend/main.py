@@ -10,12 +10,13 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import os
 import sys
+import pickle
+import tensorflow as tf
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import our models
-from models.video_exercise_classifier import VideoExerciseClassifier
+# Import our improved models with FSM
 from rep_counters.pushup_counter import PushupCounter
 from rep_counters.squat_counter import SquatCounter
 from rep_counters.curl_counter import CurlCounter
@@ -63,6 +64,10 @@ pose = mp_pose.Pose(
 
 # Initialize classifier and counters
 classifier = None
+label_encoder = None
+scaler = None
+sequence_length = 30
+c_lstm_model = None
 counters = {
     'push_up': PushupCounter(),
     'squat': SquatCounter(),
@@ -81,25 +86,41 @@ classification_buffer_size = 1  # Further reduced for immediate response
 min_classification_confidence = 0.35  # Lower for faster detection
 frame_skip_counter = 0
 process_every_nth_frame = 2  # Process every 2nd frame for better performance
+exercise_history = []
+stable_frames = 0
+required_stable_frames = 5
+min_reps_before_switch = 10
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize the application on startup"""
-    global classifier
+    global classifier, label_encoder, scaler, c_lstm_model
     print("="*60)
     print("  ALPHAREPS API STARTING")
     print("="*60)
     
-    # Load exercise classifier
-    model_path = "models/video_exercise_model.pkl"
-    if os.path.exists(model_path):
-        print("[*] Loading exercise classifier...")
-        classifier = VideoExerciseClassifier()
-        classifier.load_model(model_path)
-        print("[+] Model loaded successfully!")
+    # Load BiLSTM exercise classifier - use absolute path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    meta_path = os.path.join(script_dir, "scripts", "models", "bilstm_exercise_model.pkl")
+    keras_path = os.path.join(script_dir, "scripts", "models", "bilstm_exercise_model.keras")
+    
+    print(f"[*] Looking for model at: {meta_path}")
+    
+    if os.path.exists(meta_path) and os.path.exists(keras_path):
+        print("[*] Loading BiLSTM exercise classifier...")
+        with open(meta_path, "rb") as f:
+            meta = pickle.load(f)
+        global label_encoder, scaler, sequence_length
+        label_encoder = meta["label_encoder"]
+        scaler = meta["scaler"]
+        sequence_length = meta["sequence_length"]
+        c_lstm_model = tf.keras.models.load_model(keras_path)
+        classifier = True
+        print("[+] BiLSTM model loaded successfully!")
     else:
-        print("[!] Model not found. Please train the model first.")
-        print("    Run: python backend/scripts/train_video_model.py")
+        print("[!] BiLSTM model not found. Please train the model first.")
+        print(f"    Expected path: {meta_path}")
+        print("    Run: python backend/scripts/models/bilstm_training.py")
         classifier = None
     
     print("[+] AlphaReps API Ready!")
@@ -158,7 +179,7 @@ async def login(request: LoginRequest):
 @app.post("/api/workout/analyze")
 async def analyze_frame(data: WorkoutFrame):
     """Analyze a single workout frame"""
-    global current_exercise, current_counter
+    global current_exercise, current_counter, stable_frames, exercise_history
     
     if classifier is None:
         raise HTTPException(
@@ -188,101 +209,137 @@ async def analyze_frame(data: WorkoutFrame):
                 "angles": {}
             }
         
-        # Extract landmarks for classification (reuse existing pose results)
-        landmarks = classifier.extract_landmarks_from_results(results)
-        
-        if landmarks is None:
-            return {
-                "success": False,
-                "exercise": "NONE",
-                "reps": 0,
-                "stage": "ready",
-                "feedback": "Could not extract landmarks",
-                "confidence": 0,
-                "formQuality": "UNKNOWN",
-                "angles": {}
-            }
-        
-        # Classify exercise with confidence
-        detected_exercise = classifier.predict(landmarks)
-        probabilities = classifier.predict_proba(landmarks)
-        exercise_confidence = max(probabilities.values()) if probabilities else 0
-        
-        # Simplified classification for faster response
-        classification_buffer.append(detected_exercise)
-        if len(classification_buffer) > classification_buffer_size:
+        # Extract simple keypoints (x,y,z only) as in BiLSTM core
+        keypoints = []
+        for lm in results.pose_landmarks.landmark:
+            keypoints.extend([lm.x, lm.y, lm.z])
+        features = np.array(keypoints, dtype=np.float32)
+
+        # Prepare sequence buffer for LSTM (repurpose classification_buffer)
+        classification_buffer.append(features)
+        if len(classification_buffer) > sequence_length:
             classification_buffer.pop(0)
-        
-        # Use immediate detection with minimal buffering
-        most_common_exercise = detected_exercise
-        vote_confidence = exercise_confidence
-        
-        # Faster exercise detection logic
-        if current_exercise is None:
-            # First detection - set exercise immediately if confidence is reasonable
-            if exercise_confidence >= min_classification_confidence:
-                current_exercise = most_common_exercise
-                current_counter = counters.get(current_exercise)
-                if current_counter:
-                    current_counter.reset()
-                print(f"[INFO] Exercise detected: {current_exercise} (confidence: {exercise_confidence:.2f})")
-        elif most_common_exercise != current_exercise and exercise_confidence >= min_classification_confidence + 0.1:
-            # Allow faster exercise change with slightly higher confidence
-            print(f"[INFO] Exercise changed from {current_exercise} to {most_common_exercise}")
-            current_exercise = most_common_exercise
-            current_counter = counters.get(current_exercise)
-            if current_counter:
-                current_counter.reset()
-            classification_buffer.clear()
-        
-        # Count reps
-        if current_counter and current_exercise:
-            result = current_counter.count_rep(results.pose_landmarks)
-            print(f"[DEBUG] Exercise: {current_exercise}, Counter result: {result}")
-            
-            # Parse result based on counter type
-            if isinstance(result, tuple) and len(result) >= 2:
-                if len(result) == 6:  # PushupCounter
-                    reps, stage, elbow_angle, feedback, back_angle, form_quality = result
-                    angles = {"elbow": elbow_angle or 0, "back": back_angle or 0}
-                elif len(result) == 3:  # Standard counters (Curl, Squat, etc.)
-                    reps, stage, angle = result
-                    feedback = f"{stage.upper()} - {reps} REPS" if stage else "READY"
-                    form_quality = "GOOD"
-                    angles = {"primary": angle if angle else 0}
-                elif len(result) == 2:  # Basic counter
-                    reps, stage = result
-                    feedback = f"{stage.upper()} - {reps} REPS" if stage else "READY"
-                    form_quality = "GOOD"
-                    angles = {}
-                else:
-                    reps, stage = result[0] if len(result) > 0 else 0, result[1] if len(result) > 1 else "ready"
-                    feedback = f"{stage.upper()} - {reps} REPS" if stage else "READY"
-                    form_quality = "GOOD"
-                    angles = {}
-            else:
-                reps, stage = 0, "ready"
-                feedback = "Processing..."
-                form_quality = "UNKNOWN"
-                angles = {}
+
+        if len(classification_buffer) < sequence_length:
+            most_common_exercise = None
+            exercise_confidence = 0.0
         else:
-            reps, stage = 0, "ready"
-            feedback = f"Detecting {most_common_exercise.replace('_', ' ').title()}..."
+            seq = np.array(classification_buffer[-sequence_length:], dtype=np.float32)
+            seq_reshaped = seq.reshape(-1, seq.shape[-1])
+            seq_scaled = scaler.transform(seq_reshaped)
+            seq_scaled = seq_scaled.reshape(1, sequence_length, -1)
+            probs = c_lstm_model.predict(seq_scaled, verbose=0)[0]
+            class_idx = int(np.argmax(probs))
+            detected_exercise = label_encoder.inverse_transform([class_idx])[0]
+            exercise_confidence = float(np.max(probs))
+            most_common_exercise = detected_exercise
+        
+        # Exercise switching logic with stable frames only
+        if current_exercise is None:
+            # No exercise locked yet – require reasonable confidence and a few stable frames
+            if exercise_confidence >= min_classification_confidence:
+                stable_frames += 1
+                if stable_frames >= required_stable_frames:
+                    current_exercise = most_common_exercise
+                    current_counter = counters.get(current_exercise)
+                    if current_counter:
+                        current_counter.reset()
+                    exercise_history.append(current_exercise)
+                    print(f"\n{'='*60}")
+                    print(f"[EXERCISE DETECTED] {current_exercise.upper().replace('_', ' ')}")
+                    print(f"[CONFIDENCE] {exercise_confidence:.1%}")
+                    print(f"{'='*60}\n")
+                    stable_frames = 0
+        else:
+            # Allow switching if classifier detects a different exercise
+            if most_common_exercise != current_exercise and exercise_confidence >= min_classification_confidence:
+                stable_frames += 1
+                if stable_frames >= required_stable_frames:
+                    current_reps = current_counter.get_count() if current_counter else 0
+                    print(f"\n{'='*60}")
+                    print(f"[EXERCISE SWITCH] {current_exercise.upper().replace('_', ' ')} → {most_common_exercise.upper().replace('_', ' ')}")
+                    print(f"[COMPLETED REPS] {current_reps}")
+                    print(f"{'='*60}\n")
+                    current_exercise = most_common_exercise
+                    current_counter = counters.get(current_exercise)
+                    if current_counter:
+                        current_counter.reset()
+                    classification_buffer.clear()
+                    exercise_history.append(current_exercise)
+                    stable_frames = 0
+            else:
+                # Same exercise prediction – reset stability counter
+                stable_frames = 0
+        
+        # Count reps using new frontend-friendly method
+        if current_counter and current_exercise:
+            # Use new process_frame() method for clean JSON output
+            counter_result = current_counter.process_frame(results.pose_landmarks)
+            
+            # Extract common values
+            reps = counter_result.get("reps", 0)
+            stage = counter_result.get("state", "idle")
+            angle = counter_result.get("angle", 0)
+            
+            # Extract form feedback from all counters (all have form feedback now)
+            feedback = counter_result.get("form_feedback", f"{stage.upper()} - {reps} REPS")
+            form_quality = counter_result.get("form_quality", "GOOD")
+            
+            # Build exercise-specific angles dict
+            if current_exercise == 'push_up':
+                angles = {
+                    "elbow": angle if angle else 0,
+                    "back": counter_result.get("back_angle", 0)
+                }
+            elif current_exercise == 'squat':
+                angles = {
+                    "knee": angle if angle else 0,
+                    "back": counter_result.get("back_angle", 0)
+                }
+            elif current_exercise in ['barbell_biceps_curl', 'hammer_curl']:
+                angles = {
+                    "elbow": angle if angle else 0,
+                    "arm": self.primary_arm if hasattr(counter_result, 'primary_arm') else "right"
+                }
+            elif current_exercise == 'shoulder_press':
+                angles = {
+                    "elbow": angle if angle else 0,
+                    "alignment": counter_result.get("wrist_alignment", 0)
+                }
+            else:
+                angles = {"primary": angle if angle else 0}
+            
+            # Real-time terminal display
+            if current_exercise:
+                status_line = f"\r[{current_exercise.upper().replace('_', ' ')}] State: {stage.upper():<5} | Angle: {angle:5.1f}° | Reps: {reps}"
+                sys.stdout.write(status_line)
+                sys.stdout.flush()
+            
+            # Log rep increments (only when rep is actually counted)
+            rep_incremented = counter_result.get("rep_incremented", False)
+            if rep_incremented:
+                sys.stdout.write("\n")  # Move to next line to preserve log
+                print(f"[REP COUNTED] {current_exercise.upper().replace('_', ' ')} #{reps} | Angle: {angle:.1f}°")
+        else:
+            reps, stage = 0, "idle"
+            feedback = f"Detecting {most_common_exercise.replace('_', ' ').title()}..." if most_common_exercise else "Detecting..."
             form_quality = "UNKNOWN"
             angles = {}
+            rep_incremented = False
         
         # Use current_exercise if set, otherwise use detected exercise
-        display_exercise = current_exercise if current_exercise else most_common_exercise
+        display_exercise = current_exercise if current_exercise else (most_common_exercise if most_common_exercise else "Detecting...")
         
         return {
             "success": True,
-            "exercise": display_exercise.upper().replace('_', ' '),
+            "exercise": display_exercise.upper().replace('_', ' ') if display_exercise else "DETECTING...",
             "reps": reps,
             "stage": stage,
             "feedback": feedback,
             "confidence": int(exercise_confidence * 100),
             "formQuality": form_quality,
-            "angles": angles
+            "angles": angles,
+            "rep_incremented": rep_incremented
         }
         
     except Exception as e:
@@ -388,11 +445,15 @@ async def get_supported_exercises():
 @app.post("/api/workout/reset")
 async def reset_workout():
     """Reset workout session"""
-    global current_exercise, current_counter, classification_buffer
+    global current_exercise, current_counter, classification_buffer, stable_frames, exercise_history
     
     current_exercise = None
     current_counter = None
     classification_buffer.clear()
+    stable_frames = 0
+    exercise_history = []
+    for counter in counters.values():
+        counter.reset()
     
     print("[INFO] Workout session reset")
     
